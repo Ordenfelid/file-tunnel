@@ -1,0 +1,26 @@
+{
+  "name": "result2asset",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "SiYuan agent tool: binary-safe wrapper `exec` for MCP tools and kernel tools — text passes through, binary results land in assets/mcp, sendFiles injects asset bytes into tool arguments",
+  "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "cross-env NODE_ENV=development vite build --watch",
+    "build": "cross-env NODE_ENV=production vite build",
+    "deploy": "npm run build && node scripts/deploy.mjs",
+    "check": "tsc --noEmit -p tsconfig.json",
+    "test": "npm run build && node scripts/smoke.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "cross-env": "^10.1.0",
+    "siyuan": "1.2.7",
+    "typescript": "^6.0.3",
+    "vite": "^8.2.2",
+    "vite-plugin-static-copy": "^4.1.1",
+    "vite-plugin-zip-pack": "^1.2.4"
+  }
+}
