@@ -2,7 +2,7 @@
   "name": "result2asset",
   "author": "ordis",
   "url": "https://github.com/Ordenfelid/result2asset",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "minAppVersion": "3.8.0",
   "backends": [
     "all"

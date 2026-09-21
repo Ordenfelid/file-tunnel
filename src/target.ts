@@ -32,10 +32,26 @@ export function resolveTarget(args: ExecArgs): ResolvedTarget {
         if (!serverName || !tool) {
             throw new ToolError("server 与 tool 需成对提供。/ server and tool must be provided together.");
         }
-        const server = enabledMcpServers().find((s) => s.name === serverName);
+        const servers = enabledMcpServers();
+        let server = servers.find((s) => s.name === serverName);
         if (!server) {
-            const names = enabledMcpServers().map((s) => s.name).join("、") || "（无）";
-            throw new ToolError(`未找到名为「${serverName}」的已启用 MCP 服务器。可用服务器：${names}`);
+            // 模型偶尔会记错大小写；唯一命中时不敏感匹配可救回，多重合仍报错
+            const folded = servers.filter((s) => s.name.toLowerCase() === serverName.toLowerCase());
+            if (folded.length === 1) {
+                server = folded[0];
+            } else if (folded.length > 1) {
+                throw new ToolError(
+                    `多个 MCP 服务器名称与「${serverName}」大小写不敏感地重合，请使用准确名称。` +
+                    "/ Multiple servers match case-insensitively; use the exact name.",
+                );
+            }
+        }
+        if (!server) {
+            const names = servers.map((s) => s.name).join("、") || "（无）";
+            throw new ToolError(
+                `未找到名为「${serverName}」的已启用 MCP 服务器。可用服务器：${names}（以 设置→AI→MCP 中的名称为准）。` +
+                "/ No enabled MCP server with this name; names must match Settings → AI → MCP.",
+            );
         }
         return {kind: "mcp", server, tool, nativeName: `mcp_${sanitizeName(server.name)}_${sanitizeName(tool)}`};
     }

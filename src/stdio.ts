@@ -2,9 +2,7 @@
 // NDJSON 帧协议：initialize → notifications/initialized → tools/call，用后即杀进程。
 
 import { McpCallToolResult } from "./rpc";
-import { IMCPServerConfig, ToolError } from "./util";
-
-type NodeRequire = (id: string) => unknown;
+import { IMCPServerConfig, nodeRequire, ToolError } from "./util";
 
 interface ReadableLike {
     setEncoding(enc: string): ReadableLike;
@@ -22,16 +20,6 @@ interface ChildProcess {
 
 interface SpawnFn {
     (command: string, args: string[], options: {env: Record<string, string>; stdio: string[]; windowsHide: boolean}): ChildProcess;
-}
-
-function nodeRequire(): NodeRequire {
-    const req = (window as unknown as {require?: unknown}).require;
-    if (typeof req !== "function") {
-        throw new ToolError(
-            "stdio 类型 MCP 服务器只能在思源桌面版调用（当前环境无 Node 集成）。该服务器请直接用原生工具。/ stdio MCP servers need the SiYuan desktop app.",
-        );
-    }
-    return req as NodeRequire;
 }
 
 /**
@@ -74,6 +62,11 @@ export async function callStdioTool(
     resolve: (tpl: string) => string,
 ): Promise<McpCallToolResult> {
     const req = nodeRequire();
+    if (!req) {
+        throw new ToolError(
+            "stdio 类型 MCP 服务器只能在思源桌面版调用（当前环境无 Node 集成）。该服务器请直接用原生工具。/ stdio MCP servers need the SiYuan desktop app.",
+        );
+    }
     const {spawn} = req("child_process") as {spawn: SpawnFn};
     const procEnv = (req("process") as {env: Record<string, string | undefined>}).env;
     if (!server.command) {
@@ -180,7 +173,7 @@ export async function callStdioTool(
         const init = await call("initialize", {
             protocolVersion: "2025-06-18",
             capabilities: {},
-            clientInfo: {name: "result2asset", version: "0.1.0"},
+            clientInfo: {name: "result2asset", version: "0.1.1"},
         });
         unwrapM(init, "initialize");
         child.stdin.write(JSON.stringify({jsonrpc: "2.0", method: "notifications/initialized"}) + "\n");

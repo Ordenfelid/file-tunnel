@@ -63,8 +63,9 @@ const siyuanStub = {
 const PNG_B64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
 const PNG_BYTES = Buffer.from(PNG_B64, "base64");
 
-const recorded = {requests: [], upload: null, uploadArgs: null, readDirs: [], gets: []};
+const recorded = {requests: [], upload: null, uploadArgs: null, readDirs: [], gets: [], hangClosed: false};
 let mockBase = "";
+let nodeTransportCalls = 0;
 
 const mock = http.createServer((req, res) => {
     let body = "";
@@ -119,6 +120,16 @@ const mock = http.createServer((req, res) => {
                 res.end();
                 return;
             }
+            if (name === "hang_sse") {
+                // SSE 帧写完响应事件后不关闭连接，验证客户端拿到响应即主动断流
+                const result = {content: [{type: "text", text: "hung then closed"}]};
+                res.writeHead(200, {"content-type": "text/event-stream"});
+                res.write(`event: message\ndata: ${JSON.stringify({jsonrpc: "2.0", id: msg.id, result})}\n\n`);
+                res.on("close", () => {
+                    recorded.hangClosed = true;
+                });
+                return;
+            }
             res.writeHead(200, {"content-type": "application/json"});
             res.end(JSON.stringify({jsonrpc: "2.0", id: msg.id, result: {content: [{type: "text", text: "kernel ok"}]}}));
             return;
@@ -158,6 +169,15 @@ globalThis.fetch = async (url, opts) => {
 };
 
 globalThis.window = {
+    // origin 与 mock 服务器不同源 → 外部 http 请求走 Node 传输；相对路径（/mcp 桥）仍走 fetch
+    location: {origin: "http://localhost:9"},
+    require: (id) => {
+        if (id === "http" || id === "https") {
+            nodeTransportCalls += 1;
+            return require2(id);
+        }
+        throw new Error("unexpected window.require " + id);
+    },
     siyuan: {
         config: {
             api: {token: "test-token"},
@@ -186,7 +206,7 @@ try {
     // 场景 1：二进制结果落盘 + 头部插值 + SSE 帧解析 + 会话生命周期
     setServers([mockServer()]);
     recorded.requests.length = 0;
-    const out1 = await handler({target: "mcp_mock-srv_echo_binary", args: {q: 1}});
+    const out1 = await handler({target: "mcp_mock-srv_echo_binary", args: {q: 1, note: "中文备注"}});
     assert.ok(out1.result.includes("rendered ok"), `text passthrough missing: ${JSON.stringify(out1)}`);
     assert.ok(out1.result.includes("assets/mcp/"), `landed path missing: ${JSON.stringify(out1)}`);
     assert.ok(!out1.result.includes(PNG_B64.slice(0, 40)), "base64 leaked into result");
@@ -200,6 +220,8 @@ try {
     const posts = recorded.requests.filter((r) => r.method === "POST");
     assert.equal(posts[0].headers.authorization, "Bearer sekret", "secret interpolation failed");
     assert.ok(posts.some((r) => r.headers["mcp-session-id"] === "sess-42"), "session id not carried");
+    assert.ok(nodeTransportCalls > 0, "node transport not used for cross-origin http");
+    assert.ok(posts.every((r) => Buffer.byteLength(r.body, "utf8") === Number(r.headers["content-length"])), "content-length mismatch");
     await new Promise((r) => setTimeout(r, 50)); // DELETE 是尽力而为的异步收尾
     assert.ok(recorded.requests.some((r) => r.method === "DELETE"), "session not closed");
     console.log("PASS 1: binary result landed, headers interpolated, SSE parsed, session closed");
@@ -236,6 +258,15 @@ try {
     const out5 = await handler({target: "mcp_nosuch_thing", args: {}});
     assert.ok(out5.error && out5.error.includes("mock-srv"), `unresolved target hint: ${JSON.stringify(out5)}`);
     console.log("PASS 5: unresolvable target lists available servers");
+
+    // 场景 6：显式 server 名大小写宽容 + SSE 流不关闭时主动断流
+    const out6a = await handler({server: "MOCK-SRV", tool: "echo_text", args: {}});
+    assert.ok(out6a.result && out6a.result.includes("kernel ok"), `case-insensitive server match failed: ${JSON.stringify(out6a)}`);
+    const out6 = await handler({target: "mcp_mock-srv_hang_sse", args: {}});
+    assert.equal(out6.result, "hung then closed");
+    await new Promise((r) => setTimeout(r, 50));
+    assert.ok(recorded.hangClosed, "client did not close the hanging SSE stream");
+    console.log("PASS 6: case-insensitive server match + hanging SSE stream closed early");
 
     console.log("\nALL SMOKE TESTS PASSED");
 } finally {

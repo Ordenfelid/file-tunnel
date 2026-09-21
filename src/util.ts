@@ -56,6 +56,12 @@ export function enabledMcpServers(): IMCPServerConfig[] {
     return (siyuanConfig().ai?.mcp?.servers ?? []).filter((s) => s.enabled);
 }
 
+/** 桌面版渲染进程的 Node 集成入口；浏览器/移动端环境返回 null。 */
+export function nodeRequire(): ((id: string) => unknown) | null {
+    const req = (window as unknown as {require?: unknown}).require;
+    return typeof req === "function" ? req as (id: string) => unknown : null;
+}
+
 /** 与内核 kernel/mcp/client/mcp.go sanitize 一致：[A-Za-z0-9_-] 外全部转下划线。 */
 export function sanitizeName(s: string): string {
     return s.replace(/[^\w-]/g, "_");
