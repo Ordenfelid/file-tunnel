@@ -1,6 +1,6 @@
 // 冒烟测试：起一个 mock MCP 服务器 + 拦截内核 API fetch，驱动 src 全流程验证
 // （HTTP 通道、{{secrets}} 头部插值、SSE/JSON 双帧解析、二进制落盘、OAuth 短路、
-//  sendFiles 闭环注入、内核 /mcp 桥 Token 鉴权、浏览器环境经内核 forwardProxy 代发）。
+//  {{file2b64.…}} 占位符展开、内核 /mcp 桥 Token 鉴权、浏览器环境经内核 forwardProxy 代发）。
 // 不依赖运行中的思源内核。
 import assert from "node:assert/strict";
 import fs from "node:fs";
@@ -255,19 +255,38 @@ try {
     assert.ok(out2.error.includes("OAuth"));
     console.log("PASS 2: OAuth short-circuit points to native tool");
 
-    // 场景 3：sendFiles 闭环（裸文件名时间戳模糊匹配 → base64 注入参数字段）
+    // 场景 3：{{file2b64.…}} 占位符展开（整值替换 + 子串嵌入代码 + 嵌套结构递归 + 裸文件名时间戳模糊匹配）
     recorded.readDirs.length = 0;
+    recorded.gets.length = 0;
     const out3 = await handler({
         target: "mcp_mock-srv_upload_receiver",
-        args: {note: "hi"},
-        sendFiles: [{field: "file_b64", path: "assets/mcp/pic.png"}],
+        args: {
+            note: "hi",
+            file_b64: "{{file2b64.assets/mcp/pic.png}}",
+            code: `with open("a.png","wb") as f: f.write(base64.b64decode("{{file2b64.pic.png}}"))`,
+            nested: {inner: ["untouched", "{{file2b64.pic.png}}"]},
+        },
     });
     assert.equal(out3.result, "received");
-    assert.equal(recorded.uploadArgs.file_b64, Buffer.from([1, 2, 3, 4, 5]).toString("base64"));
-    assert.equal(recorded.uploadArgs.note, "hi");
+    const B64 = Buffer.from([1, 2, 3, 4, 5]).toString("base64");
+    assert.equal(recorded.uploadArgs.file_b64, B64, "whole-value placeholder must become pure base64");
+    assert.equal(recorded.uploadArgs.note, "hi", "placeholder-free values pass through");
+    assert.equal(recorded.uploadArgs.code, `with open("a.png","wb") as f: f.write(base64.b64decode("${B64}"))`,
+        "substring placeholder must embed base64 in place");
+    assert.equal(recorded.uploadArgs.nested.inner[0], "untouched");
+    assert.equal(recorded.uploadArgs.nested.inner[1], B64, "expansion must recurse into nested objects/arrays");
     assert.ok(recorded.readDirs[0].includes("assets"), `readDir path: ${recorded.readDirs[0]}`);
-    assert.ok(recorded.gets[0].endsWith("pic-20260921120000-abc123.png"), `getFile path: ${recorded.gets[0]}`);
-    console.log("PASS 3: sendFiles resolves, reads and injects base64 into args");
+    assert.equal(recorded.gets.length, 3, "each occurrence reads the file");
+    assert.ok(recorded.gets.every((p) => p.endsWith("pic-20260921120000-abc123.png")), `getFile path: ${recorded.gets[0]}`);
+    console.log("PASS 3: {{file2b64.…}} expands whole-value, in-code and nested, fuzzy path match");
+
+    // 场景 3b：占位符路径不可解析 / 写法错误 → 硬报错，调用不发出
+    const out3a = await handler({target: "mcp_mock-srv_upload_receiver", args: {f: "{{file2b64.nope.png}}"}});
+    assert.ok(out3a.error && out3a.error.includes("nope.png"), `unresolved placeholder must hard-error: ${JSON.stringify(out3a)}`);
+    const out3b = await handler({target: "mcp_mock-srv_upload_receiver", args: {f: "{{file2b64}}"}});
+    assert.ok(out3b.error && out3b.error.includes("file2b64"), `malformed placeholder must hard-error: ${JSON.stringify(out3b)}`);
+    assert.equal(recorded.uploadArgs.note, "hi", "failed expansions must not reach the server");
+    console.log("PASS 3b: unresolved/malformed placeholder hard-errors before dispatch");
 
     // 场景 4：内核原生工具经 /mcp 桥（Token 鉴权）
     recorded.requests.length = 0;

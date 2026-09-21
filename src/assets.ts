@@ -1,6 +1,6 @@
 // 附件落盘与读取：全部走内核官方 API（Token 鉴权，同源 fetch）。
 // 落盘固定 assetsDirPath=assets/mcp，不给模型路径参数；
-// 读取（sendFiles 用）限定全局 assets 命名空间，拒绝对路径与越段。
+// 读取（{{file2b64.路径}} 展开用）限定全局 assets 命名空间，拒绝对路径与越段。
 
 import { apiToken, ToolError } from "./util";
 
@@ -14,7 +14,7 @@ interface DirEntry {
 /** 规范化为 assets 内的相对路径（无 assets/ 前缀；拒绝绝对路径、.. 与空段）。 */
 export function normalizeAssetPath(raw: unknown): string {
     if (typeof raw !== "string" || !raw.trim()) {
-        throw new ToolError("缺少附件路径：请提供 assets/ 下的相对路径（sendFiles 仅接受工作空间 assets 内的文件）");
+        throw new ToolError("缺少附件路径：请提供 assets/ 下的相对路径（{{file2b64.路径}} 仅接受工作空间 assets 内的文件）");
     }
     let p = raw.trim().replace(/\\/g, "/");
     p = p.split("?")[0].split("#")[0].replace(/^\/+/, "");
@@ -59,7 +59,7 @@ export async function resolveAssetPath(raw: unknown): Promise<string> {
         }
     }
     throw new ToolError(
-        `未在全局 assets 中找到 ${rel}。sendFiles 仅支持全局 assets/ 附件（exec 落盘返回的路径可直接使用）；笔记本内附件暂不支持`,
+        `未在全局 assets 中找到 ${rel}。{{file2b64.路径}} 仅支持全局 assets/ 附件（exec 落盘返回的路径可直接使用）；笔记本内附件暂不支持`,
     );
 }
 

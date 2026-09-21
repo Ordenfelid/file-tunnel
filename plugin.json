@@ -2,7 +2,7 @@
   "name": "result2asset",
   "author": "ordis",
   "url": "https://github.com/Ordenfelid/result2asset",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "minAppVersion": "3.8.0",
   "backends": [
     "all"
@@ -15,8 +15,8 @@
     "zh_CN": "结果落附件"
   },
   "description": {
-    "default": "One agent tool, exec: call any MCP tool or kernel tool the binary-safe way. Text results come back verbatim; binary results (images, audio, video, files) are saved into assets/mcp and only their paths are returned, so base64 blobs never flood the conversation. sendFiles injects workspace asset bytes into tool arguments.",
-    "zh_CN": "为思源 Agent 提供一个工具 exec：以二进制安全的方式调用 MCP 工具或内核工具。文本结果原样返回；二进制结果（图片/音频/视频/文件）落盘到 assets/mcp，只返回路径和元数据，base64 不再灌进对话。sendFiles 可把工作空间附件以 base64 注入工具参数。"
+    "default": "One agent tool, exec: call any MCP tool or kernel tool the binary-safe way. Text results come back verbatim; binary results (images, audio, video, files) are saved into assets/mcp and only their paths are returned, so base64 blobs never flood the conversation. {{file2b64.…}} placeholders expand workspace asset bytes into tool arguments.",
+    "zh_CN": "为思源 Agent 提供一个工具 exec：以二进制安全的方式调用 MCP 工具或内核工具。文本结果原样返回；二进制结果（图片/音频/视频/文件）落盘到 assets/mcp，只返回路径和元数据，base64 不再灌进对话。参数中的 {{file2b64.…}} 占位符可把工作空间附件以 base64 展开进工具参数。"
   },
   "readme": {
     "default": "README.md",

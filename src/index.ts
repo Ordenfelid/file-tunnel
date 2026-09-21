@@ -1,9 +1,9 @@
 // result2asset：唯一能力 exec——以二进制安全的方式代调 MCP 工具与内核工具。
 // 定位是 overlay 包装层：不改变模型可见的原生工具，只提供一条包装通道；
-// 文本结果直回、二进制落盘 assets/mcp、sendFiles 注入附件字节、OAuth 短路报错指路。
+// 文本结果直回、二进制落盘 assets/mcp、{{file2b64.路径}} 展开附件字节、OAuth 短路报错指路。
 
 import { Plugin } from "siyuan";
-import { applySendFiles } from "./inject";
+import { expandFilePlaceholders } from "./expand";
 import { callToolOverHttp, McpCallToolResult } from "./rpc";
 import { handleToolResult } from "./result";
 import { callStdioTool } from "./stdio";
@@ -24,13 +24,15 @@ export default class Result2AssetPlugin extends Plugin {
                 "render, export, tts tools) or when an argument needs file bytes. Text results are returned verbatim; " +
                 "binary results are saved into the workspace at assets/mcp/ and only their paths + metadata come back, " +
                 "so base64 never floods the conversation; saved paths can be embedded into documents directly. " +
-                "To send a file to a tool, pass sendFiles: [{field, path}] — each entry reads a workspace asset and " +
-                "injects its base64 bytes into args[field]. OAuth-authorized MCP servers cannot be proxied here " +
-                "(credentials are kernel-managed); such calls fail fast and name the native tool to use instead.\n" +
+                "To attach a file, write {{file2b64.assets/...}} in any argument string value — before the call it is " +
+                "replaced by that workspace file's base64 (a whole value becomes a pure-base64 field; embedding it " +
+                "inside code lets code-executing tools receive the bytes). OAuth-authorized MCP servers cannot be " +
+                "proxied here (credentials are kernel-managed); such calls fail fast and name the native tool to use instead.\n" +
                 "二进制安全地代调 MCP 工具与思源内核工具。凡结果可能含二进制（图片/音频/视频/文件，如截图、生成图片、" +
                 "渲染、导出、语音合成类工具）、或参数需要文件字节的场景，请用本工具代替原生工具：文本结果原样返回；" +
                 "二进制结果落盘到 assets/mcp/ 并只返回路径与元数据（base64 不进对话），落盘路径可直接嵌入文档。" +
-                "需要向工具传文件时用 sendFiles: [{field, path}]——逐项读取工作空间附件并把 base64 注入 args 对应字段。" +
+                "需要向工具传文件时，在任意参数字符串值里写 {{file2b64.assets/...}}——调用前会替换为该工作空间" +
+                "附件的 base64（整值即纯 base64 字段，嵌入代码中即可让执行类工具收到字节）。" +
                 "OAuth 授权的 MCP 服务器无法经本工具代调（凭据由内核托管），此类调用会立刻报错并指明应改用的原生工具。",
             inputSchema: {
                 type: "object",
@@ -57,35 +59,14 @@ export default class Result2AssetPlugin extends Plugin {
                         type: "object",
                         additionalProperties: true,
                         description:
-                            "The target tool's own arguments object, passed through verbatim. 目标工具自身的参数对象，原样透传。",
-                    },
-                    sendFiles: {
-                        type: "array",
-                        description:
-                            "Files to attach: each {field, path} reads the workspace asset at path and injects its base64 bytes " +
-                            "into args[field] before the call. Paths are workspace assets/... relative (exec's returned paths work " +
-                            "as-is); a bare filename auto-matches SiYuan's timestamp-suffixed names. " +
-                            "上传文件：逐项 {field, path} 读取工作空间附件并把 base64 注入 args[field]（exec 返回的路径可直接使用）。",
-                        items: {
-                            type: "object",
-                            additionalProperties: false,
-                            properties: {
-                                field: {
-                                    type: "string",
-                                    description: "Top-level key in args to overwrite. 注入 args 的顶层字段名（原值会被覆盖）。",
-                                },
-                                path: {
-                                    type: "string",
-                                    description: "Workspace asset path, e.g. assets/mcp/xxx.png. 附件路径。",
-                                },
-                            },
-                            required: ["field", "path"],
-                        },
+                            "The target tool's own arguments object; {{file2b64.<path>}} in any string value expands " +
+                            "to that workspace file's base64 before the call. " +
+                            "目标工具自身的参数对象；任意字符串值中的 {{file2b64.<路径>}} 在调用前展开为该工作空间附件的 base64。",
                     },
                 },
             },
             effects: {
-                localRead: true, // sendFiles 读取工作空间 assets
+                localRead: true, // {{file2b64.路径}} 读取工作空间 assets
                 localWrite: true, // 二进制结果落盘 assets/mcp
                 dataEgress: true, // 代调外部 MCP 服务器（含其参数）
             },
@@ -105,7 +86,7 @@ async function exec(plugin: Result2AssetPlugin, rawArgs: Record<string, unknown>
         nativeName = target.kind === "mcp" ? target.nativeName : target.tool;
 
         const toolArgs = extractToolArgs(rawArgs.args);
-        await applySendFiles(toolArgs, rawArgs.sendFiles);
+        await expandFilePlaceholders(toolArgs);
 
         const result = target.kind === "kernel"
             ? await callKernelTool(target.tool, toolArgs)
