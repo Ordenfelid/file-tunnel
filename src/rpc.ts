@@ -24,7 +24,7 @@ export interface McpCallToolResult {
 }
 
 const PROTOCOL_VERSION = "2025-06-18";
-const CLIENT_INFO = {name: "result2asset", version: "0.1.2"};
+const CLIENT_INFO = {name: "result2asset", version: "0.1.3"};
 
 let nextRpcId = 0;
 
@@ -251,11 +251,13 @@ async function rpcPost(
 ): Promise<{payload: JsonRpcResponse | null; sessionId: string | null}> {
     const body = JSON.stringify(message);
     const transport = chooseTransport(url);
-    // 转发通道只接受 JSON 响应，避免内核把不关闭的 SSE 长流整段缓冲直到超时
+    // Accept 按规范同时声明两种类型：单值 application/json 会被 MCPHub 等严格网关在内容协商层
+    // 直接回 406（鉴权之前，连工具名都没解析）。转发通道无法中途断流，服务器若以不关闭的
+    // SSE 响应会整段缓冲到超时——错误自带通道标签，属可辨认的残余风险。
     const sendHeaders: Record<string, string> = {
         ...headers,
         "Content-Type": "application/json",
-        "Accept": transport === "relay" ? "application/json" : "application/json, text/event-stream",
+        "Accept": "application/json, text/event-stream",
         ...(sessionId ? {"mcp-session-id": sessionId} : {}),
     };
     try {
@@ -286,7 +288,7 @@ async function rpcPost(
             throw new OAuthRequiredError(resp.header("WWW-Authenticate") || "");
         }
         if (resp.status < 200 || resp.status >= 300) {
-            throw new ToolError(`MCP 服务器返回 HTTP ${resp.status}（${url}）`);
+            throw new ToolError(`MCP 服务器返回 HTTP ${resp.status}（${url}，通道=${TRANSPORT_LABEL[transport]}）`);
         }
         const nextSessionId = resp.header("mcp-session-id") || sessionId;
         if (isNotification || resp.status === 202) {

@@ -306,14 +306,15 @@ try {
         assert.equal(nodeTransportCalls, nodeCallsBefore, "node transport must not run without require");
         const posts7 = recorded.requests.filter((r) => r.method === "POST");
         assert.ok(posts7.length >= 3, "relay posts missing");
-        assert.ok(posts7.every((r) => r.headers.accept === "application/json"), "relay Accept must be JSON-only");
+        assert.ok(posts7.every((r) => r.headers.accept === "application/json, text/event-stream"),
+            "relay Accept must be spec-compliant dual (JSON-only gets 406 from strict gateways)");
         assert.equal(posts7[0].headers.authorization, "Bearer sekret", "relay auth header missing");
         assert.ok(posts7.every((r) => Buffer.byteLength(r.body, "utf8") === Number(r.headers["content-length"])),
             "relay content-length mismatch");
         await new Promise((r) => setTimeout(r, 50));
         assert.ok(recorded.requests.some((r) => r.method === "DELETE"), "relay session close missing");
         assert.ok(relayCalls >= 4, "relay DELETE missing");
-        console.log("PASS 7: browser env relays via kernel forwardProxy (JSON-only Accept, binary still lands)");
+        console.log("PASS 7: browser env relays via kernel forwardProxy (spec dual Accept, binary still lands)");
     } finally {
         window.require = savedRequire;
     }
