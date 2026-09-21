@@ -1,6 +1,7 @@
 // 冒烟测试：起一个 mock MCP 服务器 + 拦截内核 API fetch，驱动 src 全流程验证
 // （HTTP 通道、{{secrets}} 头部插值、SSE/JSON 双帧解析、二进制落盘、OAuth 短路、
-//  sendFiles 闭环注入、内核 /mcp 桥 Token 鉴权）。不依赖运行中的思源内核。
+//  sendFiles 闭环注入、内核 /mcp 桥 Token 鉴权、浏览器环境经内核 forwardProxy 代发）。
+// 不依赖运行中的思源内核。
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import http from "node:http";
@@ -66,6 +67,7 @@ const PNG_BYTES = Buffer.from(PNG_B64, "base64");
 const recorded = {requests: [], upload: null, uploadArgs: null, readDirs: [], gets: [], hangClosed: false};
 let mockBase = "";
 let nodeTransportCalls = 0;
+let relayCalls = 0;
 
 const mock = http.createServer((req, res) => {
     let body = "";
@@ -161,6 +163,27 @@ globalThis.fetch = async (url, opts) => {
     if (u === "/api/file/getFile") {
         recorded.gets.push(JSON.parse(opts.body).path);
         return new Response(new Uint8Array([1, 2, 3, 4, 5]));
+    }
+    if (u === "/api/network/forwardProxy") {
+        // 模拟内核转发接口：按契约解析请求，用 Node fetch 直连目标（无 CORS，等同内核行为）
+        relayCalls += 1;
+        const relay = JSON.parse(opts.body);
+        assert.equal(relay.contentType, "application/json", "relay contentType");
+        assert.equal(relay.payloadEncoding, "base64", "relay payloadEncoding");
+        assert.equal(relay.method, relay.method.toUpperCase(), "relay method case");
+        const target = await realFetch(relay.url, {
+            method: relay.method,
+            headers: Object.assign({}, ...relay.headers),
+            body: relay.method === "DELETE" ? undefined : Buffer.from(relay.payload, "base64").toString("utf8"),
+        });
+        const text = await target.text();
+        const headers = {};
+        target.headers.forEach((v, k) => {
+            headers[k.toLowerCase()] = [v];
+        });
+        return jsonResp({code: 0, data: {url: relay.url, status: target.status,
+            contentType: target.headers.get("content-type") ?? "", body: text,
+            bodyEncoding: "text", headers, elapsed: 1}});
     }
     if (u.startsWith("/")) {
         return realFetch(mockBase + u, opts); // 内核 /mcp 桥路由到 mock
@@ -267,6 +290,33 @@ try {
     await new Promise((r) => setTimeout(r, 50));
     assert.ok(recorded.hangClosed, "client did not close the hanging SSE stream");
     console.log("PASS 6: case-insensitive server match + hanging SSE stream closed early");
+
+    // 场景 7：浏览器/移动端（无 Node 集成）→ 跨源请求经内核 /api/network/forwardProxy 代发
+    const savedRequire = window.require;
+    window.require = undefined;
+    const nodeCallsBefore = nodeTransportCalls;
+    recorded.requests.length = 0;
+    relayCalls = 0;
+    try {
+        const out7 = await handler({target: "mcp_mock-srv_echo_binary", args: {q: 2}});
+        assert.ok(out7.result.includes("rendered ok"), `relay result: ${JSON.stringify(out7)}`);
+        assert.ok(out7.result.includes("assets/mcp/"), "relay landed path missing");
+        assert.equal(recorded.upload.dir, "assets/mcp", "relay upload missing");
+        assert.ok(relayCalls >= 3, `relay call count: ${relayCalls}`); // initialize + notification + tools/call
+        assert.equal(nodeTransportCalls, nodeCallsBefore, "node transport must not run without require");
+        const posts7 = recorded.requests.filter((r) => r.method === "POST");
+        assert.ok(posts7.length >= 3, "relay posts missing");
+        assert.ok(posts7.every((r) => r.headers.accept === "application/json"), "relay Accept must be JSON-only");
+        assert.equal(posts7[0].headers.authorization, "Bearer sekret", "relay auth header missing");
+        assert.ok(posts7.every((r) => Buffer.byteLength(r.body, "utf8") === Number(r.headers["content-length"])),
+            "relay content-length mismatch");
+        await new Promise((r) => setTimeout(r, 50));
+        assert.ok(recorded.requests.some((r) => r.method === "DELETE"), "relay session close missing");
+        assert.ok(relayCalls >= 4, "relay DELETE missing");
+        console.log("PASS 7: browser env relays via kernel forwardProxy (JSON-only Accept, binary still lands)");
+    } finally {
+        window.require = savedRequire;
+    }
 
     console.log("\nALL SMOKE TESTS PASSED");
 } finally {

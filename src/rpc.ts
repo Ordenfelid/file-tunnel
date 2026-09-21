@@ -1,9 +1,10 @@
 // MCP Streamable HTTP 客户端：自连外部 http 类型服务器，也复用于内核内置 /mcp 桥。
 // 每次调用走完整生命周期 initialize → notifications/initialized → tools/call → DELETE，
 // 不持有跨调用状态。响应兼容 application/json 与 text/event-stream 两种帧格式。
-// 桌面端跨源请求走 Node http(s) 直连：渲染进程 fetch 受 Chromium 网络栈管辖（系统代理等
-// 拦截会导致 Failed to fetch），而内核原生 MCP 客户端是直连的，两条通道行为需要对齐。
-// 同源（/mcp 桥）与无 Node 集成的浏览器/移动端环境仍走 fetch。
+// 跨源请求按环境选通道：桌面端走 Node http(s) 直连（渲染进程 fetch 受 Chromium 网络栈
+// 管辖，系统代理等拦截会导致 Failed to fetch，而内核原生 MCP 客户端是直连的，行为需对齐）；
+// 浏览器/移动端经内核 /api/network/forwardProxy 代发（与原生工具同一网络栈，不受
+// 浏览器 CORS/代理限制）。同源（/mcp 桥）走 fetch。
 
 import { nodeRequire, OAuthRequiredError, ToolError } from "./util";
 
@@ -23,7 +24,7 @@ export interface McpCallToolResult {
 }
 
 const PROTOCOL_VERSION = "2025-06-18";
-const CLIENT_INFO = {name: "result2asset", version: "0.1.1"};
+const CLIENT_INFO = {name: "result2asset", version: "0.1.2"};
 
 let nextRpcId = 0;
 
@@ -74,10 +75,17 @@ function crossOrigin(url: string): boolean {
     }
 }
 
-/** 桌面端且跨源时用 Node 直连；浏览器/移动端没有 Node 集成，只能 fetch。 */
-function preferNodeTransport(url: string): boolean {
-    return crossOrigin(url) && nodeRequire() !== null;
+/** 传输通道：同源走 fetch；跨源时桌面走 Node 直连，浏览器/移动端经内核代发。 */
+type Transport = "node" | "relay" | "fetch";
+
+function chooseTransport(url: string): Transport {
+    if (!crossOrigin(url)) {
+        return "fetch";
+    }
+    return nodeRequire() !== null ? "node" : "relay";
 }
+
+const TRANSPORT_LABEL: Record<Transport, string> = {node: "桌面直连", relay: "内核转发", fetch: "浏览器 fetch"};
 
 function nodeRequest(url: string, method: string, headers: Record<string, string>, body: string | null,
     timeoutMs: number, earlySseStop: boolean): Promise<FlatResponse> {
@@ -137,6 +145,71 @@ function nodeRequest(url: string, method: string, headers: Record<string, string
     });
 }
 
+/** UTF-8 安全且分块转换不吃调用栈的 base64。 */
+function toBase64(text: string): string {
+    const bytes = new TextEncoder().encode(text);
+    let binary = "";
+    const chunk = 0x8000;
+    for (let i = 0; i < bytes.length; i += chunk) {
+        binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
+    }
+    return btoa(binary);
+}
+
+/** 浏览器/移动端跨源代发：经内核 /api/network/forwardProxy 转发，
+ *  与内核原生 MCP 客户端同一网络栈（直连、不受浏览器 CORS/代理限制）。 */
+async function kernelRelayRequest(url: string, method: string, headers: Record<string, string>,
+    body: string | null, timeoutMs: number): Promise<FlatResponse> {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+        const fr = await fetch("/api/network/forwardProxy", {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({
+                url,
+                method,
+                timeout: timeoutMs,
+                headers: Object.entries(headers).map(([name, value]) => ({[name]: value})),
+                contentType: "application/json",
+                payload: body === null ? "" : toBase64(body),
+                payloadEncoding: "base64",
+                responseEncoding: "text",
+            }),
+            signal: controller.signal,
+        });
+        if (fr.status === 404) {
+            throw new ToolError("当前内核没有 /api/network/forwardProxy 转发接口（SiYuan 版本过旧），浏览器/移动端无法访问外部 MCP 服务器，请升级内核或在桌面版使用");
+        }
+        if (fr.status === 401 || fr.status === 403) {
+            throw new ToolError(`内核转发接口鉴权失败（HTTP ${fr.status}）`);
+        }
+        if (fr.status < 200 || fr.status >= 300) {
+            throw new ToolError(`内核转发接口返回 HTTP ${fr.status}`);
+        }
+        const envelope = JSON.parse(await fr.text()) as {
+            code?: number;
+            msg?: string;
+            data?: {status?: number; contentType?: string; body?: string; headers?: Record<string, string[]>};
+        };
+        if (envelope.code !== 0 || !envelope.data) {
+            throw new ToolError(`内核转发失败（code=${envelope.code ?? "?"}）：${envelope.msg ?? ""}`);
+        }
+        const lowered: Record<string, string> = {};
+        for (const [name, values] of Object.entries(envelope.data.headers ?? {})) {
+            lowered[name.toLowerCase()] = values[0] ?? "";
+        }
+        return {
+            status: envelope.data.status ?? 0,
+            contentType: envelope.data.contentType ?? "",
+            header: (name) => lowered[name.toLowerCase()] || null,
+            text: envelope.data.body ?? "",
+        };
+    } finally {
+        clearTimeout(timer);
+    }
+}
+
 /** 从 SSE 文本里取第一条 JSON-RPC 响应（优先 id 匹配的）。 */
 function parseSsePayload(text: string): JsonRpcResponse | null {
     const datas: string[] = [];
@@ -177,19 +250,23 @@ async function rpcPost(
     isNotification: boolean,
 ): Promise<{payload: JsonRpcResponse | null; sessionId: string | null}> {
     const body = JSON.stringify(message);
+    const transport = chooseTransport(url);
+    // 转发通道只接受 JSON 响应，避免内核把不关闭的 SSE 长流整段缓冲直到超时
     const sendHeaders: Record<string, string> = {
         ...headers,
         "Content-Type": "application/json",
-        "Accept": "application/json, text/event-stream",
+        "Accept": transport === "relay" ? "application/json" : "application/json, text/event-stream",
         ...(sessionId ? {"mcp-session-id": sessionId} : {}),
     };
     try {
         let resp: FlatResponse;
-        if (preferNodeTransport(url)) {
+        if (transport === "node") {
             resp = await nodeRequest(url, "POST", {
                 ...sendHeaders,
                 "Content-Length": String(new TextEncoder().encode(body).length),
             }, body, timeoutMs, true);
+        } else if (transport === "relay") {
+            resp = await kernelRelayRequest(url, "POST", sendHeaders, body, timeoutMs);
         } else {
             const controller = new AbortController();
             const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -225,9 +302,9 @@ async function rpcPost(
         }
         const name = (e as Error).name;
         if (name === "AbortError" || name === "TimeoutError") {
-            throw new ToolError(`MCP 请求超时（${Math.round(timeoutMs / 1000)}s）：${url}`);
+            throw new ToolError(`MCP 请求超时（${Math.round(timeoutMs / 1000)}s）：${url}（通道=${TRANSPORT_LABEL[transport]}）`);
         }
-        throw new ToolError(`MCP 请求失败：${(e as Error).message}（${url}）`);
+        throw new ToolError(`MCP 请求失败：${(e as Error).message}（${url}，通道=${TRANSPORT_LABEL[transport]}）`);
     }
 }
 
@@ -276,8 +353,11 @@ export async function callToolOverHttp(
     } finally {
         if (sessionId) {
             const closeHeaders = {...headers, "mcp-session-id": sessionId};
-            if (preferNodeTransport(url)) {
+            const transport = chooseTransport(url);
+            if (transport === "node") {
                 void nodeRequest(url, "DELETE", closeHeaders, null, 5_000, false).catch(() => undefined);
+            } else if (transport === "relay") {
+                void kernelRelayRequest(url, "DELETE", closeHeaders, null, 5_000).catch(() => undefined);
             } else {
                 void fetch(url, {method: "DELETE", headers: closeHeaders}).catch(() => undefined);
             }
