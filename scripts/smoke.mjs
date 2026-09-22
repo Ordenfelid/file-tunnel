@@ -1,6 +1,6 @@
 // 冒烟测试：起一个 mock MCP 服务器 + 拦截内核 API fetch，驱动 src 全流程验证
-// （HTTP 通道、{{secrets}} 头部插值、SSE/JSON 双帧解析、二进制落盘、OAuth 短路、
-//  {{file2b64.…}} 占位符展开、内核 /mcp 桥 Token 鉴权、浏览器环境经内核 forwardProxy 代发）。
+// （HTTP 通道、{{secrets}} 头部插值、SSE/JSON 双帧解析、二进制落盘、嵌入式 resource.blob 落盘、
+//  OAuth 短路、{{file2b64.…}} 占位符展开、内核 /mcp 桥 Token 鉴权、浏览器环境经内核 forwardProxy 代发）。
 // 不依赖运行中的思源内核。
 import assert from "node:assert/strict";
 import fs from "node:fs";
@@ -115,6 +115,16 @@ const mock = http.createServer((req, res) => {
                 recorded.uploadArgs = msg.params?.arguments;
                 res.writeHead(200, {"content-type": "application/json"});
                 res.end(JSON.stringify({jsonrpc: "2.0", id: msg.id, result: {content: [{type: "text", text: "received"}]}}));
+                return;
+            }
+            if (name === "embed_resource") {
+                const result = {content: [
+                    {type: "resource", resource: {uri: "mem://pic.png", mimeType: "image/png", blob: PNG_B64}},
+                    {type: "resource", resource: {uri: "mem://note", text: "embedded text resource"}},
+                    {type: "resource", resource: {uri: "mem://empty"}},
+                ]};
+                res.writeHead(200, {"content-type": "application/json"});
+                res.end(JSON.stringify({jsonrpc: "2.0", id: msg.id, result}));
                 return;
             }
             if (name === "oauth_guard") {
@@ -248,6 +258,18 @@ try {
     await new Promise((r) => setTimeout(r, 50)); // DELETE 是尽力而为的异步收尾
     assert.ok(recorded.requests.some((r) => r.method === "DELETE"), "session not closed");
     console.log("PASS 1: binary result landed, headers interpolated, SSE parsed, session closed");
+
+    // 场景 1b：嵌入式资源（EmbeddedResource）——blob 落盘、text 资源直回、空资源维持占位
+    const out1b = await handler({target: "mcp_mock-srv_embed_resource", args: {}});
+    assert.ok(out1b.result.includes("embedded text resource"), `embedded text passthrough missing: ${JSON.stringify(out1b)}`);
+    assert.ok(out1b.result.includes("assets/mcp/"), `embedded blob landed path missing: ${JSON.stringify(out1b)}`);
+    assert.ok(!out1b.result.includes(PNG_B64.slice(0, 40)), "embedded blob base64 leaked into result");
+    assert.ok(out1b.result.includes("[unsupported content item 2"), "empty resource should stay stubbed");
+    assert.equal(out1b.structuredContent.files[0].mimeType, "image/png");
+    assert.equal(out1b.structuredContent.files[0].bytes, PNG_BYTES.length);
+    assert.equal(out1b.structuredContent.files[0].uri, "mem://pic.png");
+    assert.match(recorded.upload.files[0].name, /^mock-srv_embed_resource_0.*\.png$/);
+    console.log("PASS 1b: embedded resource blob lands, text resource passes through");
 
     // 场景 2：OAuth 401 挑战 → 定向报错指原生工具
     const out2 = await handler({target: "mcp_mock-srv_oauth_guard", args: {}});

@@ -1,6 +1,6 @@
 {
   "name": "result2asset",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "type": "module",
   "description": "SiYuan agent tool: binary-safe wrapper `exec` for MCP tools and kernel tools — text passes through, binary results land in assets/mcp, {{file2b64.…}} placeholders expand asset bytes into tool arguments",
   "license": "MIT",

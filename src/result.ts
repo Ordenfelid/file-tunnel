@@ -1,4 +1,4 @@
-// 工具结果归一化：文本直回，二进制落盘 assets/mcp 只回路径与元数据。
+// 工具结果归一化：文本直回，二进制（顶层 data 与嵌入式 resource.blob）落盘 assets/mcp 只回路径与元数据。
 
 import { landBinary } from "./assets";
 import { McpCallToolResult } from "./rpc";
@@ -31,23 +31,38 @@ export async function handleToolResult(target: string, raw: McpCallToolResult): 
     const texts: string[] = [];
     const files: LandedFile[] = [];
 
+    const landData = async (data: string, mimeRaw: unknown, uriRaw: unknown, i: number): Promise<void> => {
+        const mime = typeof mimeRaw === "string" && mimeRaw !== "" ? mimeRaw : "application/octet-stream";
+        const bytes = base64ToBytes(data);
+        const path = await landBinary(`${label}_${i}`, mime, bytes, typeof uriRaw === "string" ? uriRaw : undefined);
+        files.push({
+            path,
+            mimeType: mime,
+            bytes: bytes.length,
+            ...(typeof uriRaw === "string" && uriRaw !== "" ? {uri: uriRaw} : {}),
+        });
+    };
+
     for (const [i, item] of items.entries()) {
         if (item && item.type === "text" && typeof item.text === "string") {
             texts.push(item.text);
             continue;
         }
         if (item && typeof item.data === "string" && item.data !== "") {
-            const mime = typeof item.mimeType === "string" && item.mimeType !== ""
-                ? item.mimeType : "application/octet-stream";
-            const bytes = base64ToBytes(item.data);
-            const path = await landBinary(`${label}_${i}`, mime, bytes, typeof item.uri === "string" ? item.uri : undefined);
-            files.push({
-                path,
-                mimeType: mime,
-                bytes: bytes.length,
-                ...(typeof item.uri === "string" && item.uri !== "" ? {uri: item.uri} : {}),
-            });
+            await landData(item.data, item.mimeType, item.uri, i);
             continue;
+        }
+        // 嵌入式资源（MCP 规范 EmbeddedResource）：blob 与顶层 data 同构落盘，text 资源按语义直回
+        const res = item && item.type === "resource" && isRecord(item.resource) ? item.resource : null;
+        if (res) {
+            if (typeof res.blob === "string" && res.blob !== "") {
+                await landData(res.blob, res.mimeType, res.uri, i);
+                continue;
+            }
+            if (typeof res.text === "string") {
+                texts.push(res.text);
+                continue;
+            }
         }
         // 未知形态不吞内容：给一行截断占位，模型可据此追问或改调原生工具
         texts.push(`[unsupported content item ${i}: ${JSON.stringify(item).slice(0, 160)}]`);
@@ -81,4 +96,8 @@ function withFiles(files: LandedFile[], raw: McpCallToolResult): Record<string, 
         out.structured = raw.structuredContent;
     }
     return out;
+}
+
+function isRecord(v: unknown): v is Record<string, unknown> {
+    return v !== null && typeof v === "object";
 }

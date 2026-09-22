@@ -24,7 +24,7 @@ export interface McpCallToolResult {
 }
 
 const PROTOCOL_VERSION = "2025-06-18";
-const CLIENT_INFO = {name: "result2asset", version: "0.1.4"};
+const CLIENT_INFO = {name: "result2asset", version: "0.1.5"};
 
 let nextRpcId = 0;
 
