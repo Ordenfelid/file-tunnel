@@ -1,4 +1,4 @@
-# File Tunnel（文件隧道）
+# File Tunnel（Agent 文件隧道）
 
 让思源 Agent 正确读取 MCP 返回的图片等二进制文件——base64 不再灌进对话、撑爆上下文；也让 Agent 能把笔记里的文件上传给 MCP 工具。
 

@@ -1,6 +1,6 @@
 {
   "name": "file-tunnel",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "type": "module",
   "description": "SiYuan plugin: lets the Agent correctly read binary files (images etc.) returned by MCP instead of base64 flooding the context, and upload local asset files into MCP requests as base64",
   "license": "MIT",

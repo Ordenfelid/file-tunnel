@@ -2,7 +2,7 @@
   "name": "file-tunnel",
   "author": "ordis",
   "url": "https://github.com/Ordenfelid/file-tunnel",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "minAppVersion": "3.8.0",
   "backends": [
     "all"
@@ -12,7 +12,7 @@
   ],
   "displayName": {
     "default": "File Tunnel",
-    "zh_CN": "文件隧道"
+    "zh_CN": "Agent 文件隧道"
   },
   "description": {
     "default": "This plugin lets the SiYuan Agent correctly read binary files returned by MCP servers—images and other base64-encoded content—instead of letting raw base64 flood and blow up the context. It also lets the Agent encode local asset files as base64 into MCP requests, giving the effect of uploading local files.",
