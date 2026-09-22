@@ -1,7 +1,7 @@
 // MCP stdio 客户端：仅思源桌面版（渲染进程有 Node 集成时 window.require 可用）。
 // NDJSON 帧协议：initialize → notifications/initialized → tools/call，用后即杀进程。
 
-import { McpCallToolResult } from "./rpc";
+import { CLIENT_INFO, McpCallToolResult } from "./rpc";
 import { IMCPServerConfig, nodeRequire, ToolError } from "./util";
 
 interface ReadableLike {
@@ -173,7 +173,7 @@ export async function callStdioTool(
         const init = await call("initialize", {
             protocolVersion: "2025-06-18",
             capabilities: {},
-            clientInfo: {name: "result2asset", version: "0.1.1"},
+            clientInfo: CLIENT_INFO,
         });
         unwrapM(init, "initialize");
         child.stdin.write(JSON.stringify({jsonrpc: "2.0", method: "notifications/initialized"}) + "\n");

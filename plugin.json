@@ -1,8 +1,8 @@
 {
-  "name": "result2asset",
+  "name": "file-tunnel",
   "author": "ordis",
-  "url": "https://github.com/Ordenfelid/result2asset",
-  "version": "0.1.5",
+  "url": "https://github.com/Ordenfelid/file-tunnel",
+  "version": "0.1.6",
   "minAppVersion": "3.8.0",
   "backends": [
     "all"
@@ -11,8 +11,8 @@
     "all"
   ],
   "displayName": {
-    "default": "Result to Asset",
-    "zh_CN": "结果落附件"
+    "default": "File Tunnel",
+    "zh_CN": "文件隧道"
   },
   "description": {
     "default": "One agent tool, exec: call any MCP tool or kernel tool the binary-safe way. Text results come back verbatim; binary results (images, audio, video, files) are saved into assets/mcp and only their paths are returned, so base64 blobs never flood the conversation. {{file2b64.…}} placeholders expand workspace asset bytes into tool arguments.",
@@ -28,9 +28,12 @@
     "mcp",
     "binary",
     "asset",
+    "tunnel",
     "tool",
     "附件",
     "二进制",
+    "隧道",
+    "传文件",
     "工具"
   ]
 }

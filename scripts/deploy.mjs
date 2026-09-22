@@ -6,7 +6,7 @@ import { join, resolve } from "node:path";
 const distDir = resolve(import.meta.dirname, "../dist");
 const target =
     process.env.SIYUAN_PLUGIN_DIR ||
-    join(homedir(), "SiYuan", "data", "plugins", "result2asset");
+    join(homedir(), "SiYuan", "data", "plugins", "file-tunnel");
 
 if (!existsSync(resolve(distDir, "index.js"))) {
     console.error("dist/index.js 不存在，请先执行 npm run build");

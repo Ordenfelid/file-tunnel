@@ -47,7 +47,7 @@ const siyuanStub = {
 
         addAgentCapability(options) {
             this.caps[options.name] = options;
-            return "plugin/frontend/result2asset/" + options.name;
+            return "plugin/frontend/file-tunnel/" + options.name;
         }
 
         getSecret(name) {

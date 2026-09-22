@@ -1,6 +1,6 @@
-# Result to Asset（结果落附件）
+# File Tunnel（文件隧道）
 
-给思源 Agent 加一个 `exec` 工具：以二进制安全的方式调用 MCP 工具和内核工具。
+给思源 Agent 加一个 `exec` 工具：以二进制安全的方式调用 MCP 工具和内核工具——文件经隧道进出，base64 不进对话。
 
 ## 它解决什么问题
 
