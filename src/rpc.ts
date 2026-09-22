@@ -24,7 +24,7 @@ export interface McpCallToolResult {
 }
 
 const PROTOCOL_VERSION = "2025-06-18";
-export const CLIENT_INFO = {name: "file-tunnel", version: "0.1.6"};
+export const CLIENT_INFO = {name: "file-tunnel", version: "0.1.7"};
 
 let nextRpcId = 0;
 

@@ -2,7 +2,7 @@
   "name": "file-tunnel",
   "author": "ordis",
   "url": "https://github.com/Ordenfelid/file-tunnel",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "minAppVersion": "3.8.0",
   "backends": [
     "all"
@@ -15,8 +15,8 @@
     "zh_CN": "文件隧道"
   },
   "description": {
-    "default": "One agent tool, exec: call any MCP tool or kernel tool the binary-safe way. Text results come back verbatim; binary results (images, audio, video, files) are saved into assets/mcp and only their paths are returned, so base64 blobs never flood the conversation. {{file2b64.…}} placeholders expand workspace asset bytes into tool arguments.",
-    "zh_CN": "为思源 Agent 提供一个工具 exec：以二进制安全的方式调用 MCP 工具或内核工具。文本结果原样返回；二进制结果（图片/音频/视频/文件）落盘到 assets/mcp，只返回路径和元数据，base64 不再灌进对话。参数中的 {{file2b64.…}} 占位符可把工作空间附件以 base64 展开进工具参数。"
+    "default": "This plugin lets the SiYuan Agent correctly read binary files returned by MCP servers—images and other base64-encoded content—instead of letting raw base64 flood and blow up the context. It also lets the Agent encode local asset files as base64 into MCP requests, giving the effect of uploading local files.",
+    "zh_CN": "此插件让思源 Agent 能够正确读取 mcp 返回的图片等二进制文件（base64 编码），而不是让 base64 灌进上下文撑爆上下文；也支持 agent 将本地 asset 文件编码为 base64 嵌入 mcp 请求，以实现上传本地文件的效果。"
   },
   "readme": {
     "default": "README.md",
@@ -26,14 +26,16 @@
   "keywords": [
     "agent",
     "mcp",
+    "file",
     "binary",
     "asset",
-    "tunnel",
-    "tool",
+    "picture",
+    "base64",
     "附件",
     "二进制",
-    "隧道",
-    "传文件",
-    "工具"
+    "图片",
+    "文件",
+    "上传",
+    "下载"
   ]
 }

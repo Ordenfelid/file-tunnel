@@ -1,8 +1,8 @@
 {
   "name": "file-tunnel",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "type": "module",
-  "description": "SiYuan agent tool: binary-safe wrapper `exec` for MCP tools and kernel tools — text passes through, binary results land in assets/mcp, {{file2b64.…}} placeholders expand asset bytes into tool arguments",
+  "description": "SiYuan plugin: lets the Agent correctly read binary files (images etc.) returned by MCP instead of base64 flooding the context, and upload local asset files into MCP requests as base64",
   "license": "MIT",
   "engines": {
     "node": ">=20"

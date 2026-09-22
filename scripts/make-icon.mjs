@@ -1,5 +1,6 @@
-// 生成 icon.png：渐变圆角底 + 白色隧道环 + 深蓝文件卡穿环而出（"文件隧道/穿透"）。
-// 遮挡关系：环带最后覆盖，卡片在环带处被遮挡——呈现从洞中穿过的线程感。
+// 生成 icon.png：渐变圆角底 + 居中白色圆环 + 45° 斜向上简约箭头穿过（"文件隧道/穿透"）。
+// 遮挡关系用交叠净空表达：左下环遮箭（箭在环带净空内断开），右上箭遮环
+// （环在箭杆净空内断开）——箭头呈从环中穿过的线程感。
 // 零依赖：解析几何 + 4x 超采样抗锯齿 + zlib 手写 PNG 编码。
 // 用法：node scripts/make-icon.mjs
 import zlib from "node:zlib";
@@ -18,37 +19,49 @@ const rr = (x, y, x0, y0, x1, y1, r) => {
     const dy = Math.max(y0 + r - y, y - (y1 - r), 0);
     return dx * dx + dy * dy <= r * r;
 };
-const circ = (x, y, cx, cy, r) => (x - cx) ** 2 + (y - cy) ** 2 <= r * r;
-const tri = (x, y, ax, ay, bx, by, cx, cy) => {
-    const s1 = (bx - ax) * (y - ay) - (by - ay) * (x - ax);
-    const s2 = (cx - bx) * (y - by) - (cy - by) * (x - bx);
-    const s3 = (ax - cx) * (y - cy) - (ay - cy) * (x - cx);
-    return (s1 >= 0 && s2 >= 0 && s3 >= 0) || (s1 <= 0 && s2 <= 0 && s3 <= 0);
+const segDist = (px, py, ax, ay, bx, by) => {
+    const dx = bx - ax, dy = by - ay;
+    const t = Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / (dx * dx + dy * dy)));
+    return Math.hypot(ax + t * dx - px, ay + t * dy - py);
 };
 
-// ---------- 场景（512 坐标系，自下而上覆盖） ----------
+// ---------- 场景（512 坐标系） ----------
 const TOP = [74, 123, 245];    // #4A7BF5
 const BOT = [41, 176, 232];    // #29B0E8
-const NAVY = [23, 55, 112];    // #173770 文件卡
+const WHITE = [255, 255, 255];
 const grad = (x, y) => {
     const t = Math.min(1, Math.max(0, (x + y) / 1024));
     return [TOP[0] + (BOT[0] - TOP[0]) * t, TOP[1] + (BOT[1] - TOP[1]) * t, TOP[2] + (BOT[2] - TOP[2]) * t];
 };
+
+// 居中圆环
+const C = 256, R = 118, HBW = 16;        // 圆心 / 环半径 / 环半带宽
+// 45° 斜向上箭头：箭杆（左下尾 → 右上尖）+ 两条翼线，圆头端点
+const TAIL = [118, 394], TIP = [404.5, 107.5], WING = 80;
+const HW = 17;                            // 箭头线半宽
+const GAP = 16;                           // 交叠处净空
 
 function shade(x, y) {
     if (!rr(x, y, 0, 0, S, S, 112)) {
         return null; // 圆角外透明
     }
     let col = grad(x, y);
-    // 文件卡（左上角折角镂空透出底色）+ 右侧箭头，一体成箭形
-    const fold = tri(x, y, 156, 210, 156, 236, 182, 210);
-    if (!fold && (rr(x, y, 156, 210, 394, 302, 14) || tri(x, y, 394, 196, 394, 316, 454, 256))) {
-        col = NAVY;
-    }
-    // 隧道环最后覆盖：卡片穿过右环带处被遮挡，卡身悬于洞中、箭头在外
-    const d2 = (x - 216) ** 2 + (y - 256) ** 2;
-    if (d2 <= 138 * 138 && d2 >= 94 * 94) {
-        col = [255, 255, 255];
+    const d = Math.hypot(x - C, y - C);
+    const inRing = Math.abs(d - R) <= HBW;
+    const shaftD = segDist(x, y, TAIL[0], TAIL[1], TIP[0], TIP[1]);
+    const wingD = Math.min(
+        segDist(x, y, TIP[0], TIP[1], TIP[0] - WING, TIP[1]),
+        segDist(x, y, TIP[0], TIP[1], TIP[0], TIP[1] + WING),
+    );
+    const inArrow = Math.min(shaftD, wingD) <= HW;
+    if (x - y > 0) {
+        // 右上：箭头在上——箭杆净空内环带不可见（箭从环中穿出）
+        if (inRing && shaftD > HW + GAP) { col = WHITE; }
+        if (inArrow) { col = WHITE; }
+    } else {
+        // 左下：环在上——环带净空内箭头不可见（箭从环外穿入）
+        if (inRing) { col = WHITE; }
+        if (inArrow && Math.abs(d - R) > HBW + GAP) { col = WHITE; }
     }
     return col;
 }
