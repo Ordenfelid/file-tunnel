@@ -15,7 +15,7 @@ export default defineConfig({
         sourcemap: isDev ? "inline" : false,
         lib: {
             entry: resolve(import.meta.dirname, "src/index.ts"),
-            name: "Result2AssetPlugin",
+            name: "FileTunnelPlugin",
             fileName: () => "index.js",
             formats: ["cjs"],
         },
@@ -32,6 +32,7 @@ export default defineConfig({
                 { src: "./plugin.json", dest: "./" },
                 { src: "./icon.png", dest: "./" },
                 { src: "./README.md", dest: "./" },
+                { src: "./LICENSE", dest: "./" },
             ],
         }),
         ...(isDev
